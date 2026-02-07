@@ -192,7 +192,7 @@ export class Fighter {
 
     draw(ctx, interpolation) {
         if (this.skeleton) {
-            this.skeleton.draw(ctx, this.color);
+            this.skeleton.draw(ctx, this.color, this._getRenderOpts());
         } else {
             ctx.fillStyle = this.color;
             ctx.fillRect(
@@ -202,5 +202,10 @@ export class Fighter {
                 this.bodyHeight
             );
         }
+    }
+
+    /** Override in subclass to provide mutation render options. */
+    _getRenderOpts() {
+        return null;
     }
 }

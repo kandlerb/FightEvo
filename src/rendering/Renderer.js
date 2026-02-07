@@ -77,12 +77,26 @@ export class Renderer {
         // Player HP bar
         this._drawHPBar(ctx, 20, 20, 200, 16, player, '#4a4', 'Player');
 
-        // Enemy HP bars (stack on right side)
+        // Enemy HP bars (stack on right side) with mutation labels
         const enemies = fighters.filter(f => !f.isPlayer);
         for (let i = 0; i < enemies.length; i++) {
             const barX = CONFIG.CANVAS_WIDTH - 220;
-            const barY = 20 + i * 22;
-            this._drawHPBar(ctx, barX, barY, 200, 14, enemies[i], '#a44', `Enemy ${i + 1}`);
+            const barY = 20 + i * 28;
+            const enemy = enemies[i];
+
+            // Build label with mutation names
+            let label = `E${i + 1}`;
+            if (enemy.mutations && enemy.mutations.length > 0) {
+                const mutNames = enemy.mutations.map(m => m.name).join('+');
+                label += ` [${mutNames}]`;
+            }
+
+            // Use mutation tint for bar color if available
+            const barColor = (enemy.mutations && enemy.mutations.length > 0)
+                ? (enemy.color || '#a44')
+                : '#a44';
+
+            this._drawHPBar(ctx, barX, barY, 200, 14, enemy, barColor, label);
         }
 
         // Combo counter

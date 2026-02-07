@@ -1,5 +1,6 @@
 import { CONFIG } from '../config.js';
 import { Population, Genome } from './Neat.js';
+import { MutationCatalog } from '../mutations/MutationCatalog.js';
 
 /**
  * Death-driven continuous evolution.
@@ -58,18 +59,25 @@ export class EvolutionManager {
     }
 
     /**
-     * Get a genome for the next spawn.
-     * Falls back to a random genome if spawn pool is empty.
+     * Get a genome + body mutations for the next spawn.
+     * @param {number} waveNumber - current wave for mutation tier gating
+     * @returns {{genome: Genome, mutations: object[]}}
      */
-    requestSpawn() {
+    requestSpawn(waveNumber) {
+        let genome;
         if (this.spawnPool.length > 0) {
-            return this.spawnPool.pop();
+            genome = this.spawnPool.pop();
+        } else {
+            // Fallback: clone a random genome from population and mutate
+            const genomes = this.population.genomes;
+            genome = genomes[Math.floor(Math.random() * genomes.length)].clone();
+            genome.mutate({ mutationRate: CONFIG.NEAT_MUTATION_RATE });
         }
-        // Fallback: clone a random genome from population and mutate
-        const genomes = this.population.genomes;
-        const g = genomes[Math.floor(Math.random() * genomes.length)].clone();
-        g.mutate({ mutationRate: CONFIG.NEAT_MUTATION_RATE });
-        return g;
+
+        // Roll body mutations based on wave
+        const mutations = MutationCatalog.rollMutations(waveNumber);
+
+        return { genome, mutations };
     }
 
     /**

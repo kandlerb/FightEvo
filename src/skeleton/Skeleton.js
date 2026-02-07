@@ -119,7 +119,7 @@ export class Skeleton {
         this.root.computeWorldTransform(0, 0, 0);
     }
 
-    draw(ctx, color) {
+    draw(ctx, color, opts) {
         this.update(0);
 
         ctx.save();
@@ -128,11 +128,27 @@ export class Skeleton {
         if (this.facing === -1) {
             ctx.scale(-1, 1);
         }
-        this._drawBone(ctx, this.root, color);
+
+        // Apply alpha for semi-transparent mutations (MIMIC)
+        if (opts && opts.alpha < 1) {
+            ctx.globalAlpha = opts.alpha;
+        }
+
+        // Draw outline pass first (thicker, different color) for ARMORED/GIANT
+        if (opts && opts.outlineColor) {
+            this._drawBone(ctx, this.root, opts.outlineColor, (opts.thicknessMult || 1) + 1);
+        }
+
+        // Main pass
+        this._drawBone(ctx, this.root, color, opts && opts.thicknessMult);
+
+        ctx.globalAlpha = 1;
         ctx.restore();
     }
 
-    _drawBone(ctx, bone, color) {
+    _drawBone(ctx, bone, color, thicknessMult) {
+        const tMult = thicknessMult || 1;
+
         // Don't draw the root hip (zero-length anchor point)
         if (bone.length > 0) {
             const boneColor = this._getDamageColor(bone, color);
@@ -140,18 +156,19 @@ export class Skeleton {
 
             if (bone.isHead) {
                 // Draw head as a circle at the endpoint
+                const headRadius = 8 * tMult;
                 ctx.fillStyle = boneColor;
                 if (isBroken) {
                     ctx.setLineDash([3, 3]);
                     ctx.strokeStyle = boneColor;
                     ctx.lineWidth = 2;
                     ctx.beginPath();
-                    ctx.arc(bone.worldEnd.x, bone.worldEnd.y, 8, 0, Math.PI * 2);
+                    ctx.arc(bone.worldEnd.x, bone.worldEnd.y, headRadius, 0, Math.PI * 2);
                     ctx.stroke();
                     ctx.setLineDash([]);
                 } else {
                     ctx.beginPath();
-                    ctx.arc(bone.worldEnd.x, bone.worldEnd.y, 8, 0, Math.PI * 2);
+                    ctx.arc(bone.worldEnd.x, bone.worldEnd.y, headRadius, 0, Math.PI * 2);
                     ctx.fill();
                 }
             } else {
@@ -159,7 +176,7 @@ export class Skeleton {
                     ctx.setLineDash([4, 4]);
                 }
                 ctx.strokeStyle = boneColor;
-                ctx.lineWidth = bone.thickness;
+                ctx.lineWidth = bone.thickness * tMult;
                 ctx.lineCap = 'round';
                 ctx.beginPath();
                 ctx.moveTo(bone.worldStart.x, bone.worldStart.y);
@@ -193,7 +210,7 @@ export class Skeleton {
 
         // Recurse children
         for (const child of bone.children) {
-            this._drawBone(ctx, child, color);
+            this._drawBone(ctx, child, color, thicknessMult);
         }
     }
 

@@ -76,12 +76,15 @@ export class Game {
         const spawnX = CONFIG.ARENA_WIDTH / 2 + side * (CONFIG.ARENA_WIDTH / 2 - 80);
         const spawnY = CONFIG.GROUND_Y - 80;
 
-        const genome = this.evolution.requestSpawn();
-        const enemy = new Enemy(spawnX, spawnY, genome);
+        const { genome, mutations } = this.evolution.requestSpawn(this.wave);
+        const enemy = new Enemy(spawnX, spawnY, genome, mutations);
         enemy.skeleton = new Skeleton();
         enemy.initAnimation();
 
-        // Apply wave stat scaling
+        // Apply mutations (bone changes, stat overrides) AFTER skeleton + structural init
+        enemy.applyMutations();
+
+        // Apply wave stat scaling (on top of mutation stats)
         const statMult = this._getStatMultiplier();
         enemy.hp *= statMult;
         enemy.maxHp = enemy.hp;
@@ -195,12 +198,35 @@ export class Game {
     }
 
     _handleDeaths() {
+        const deathEffects = []; // deferred effects (explosions, splits)
+
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             const enemy = this.enemies[i];
             if (enemy.hp <= 0) {
                 // Report fitness to evolution system
                 const fitness = enemy.getFinalFitness();
                 this.evolution.reportDeath(enemy.agent.genome, fitness);
+
+                // Collect death effects before removal
+                if (enemy._explodeOnDeath) {
+                    deathEffects.push({
+                        type: 'explode',
+                        x: enemy.x,
+                        y: enemy.y,
+                        radius: enemy._explodeOnDeath.radius,
+                        damage: enemy._explodeOnDeath.damage,
+                    });
+                }
+
+                if (enemy._splitOnDeath) {
+                    deathEffects.push({
+                        type: 'split',
+                        x: enemy.x,
+                        y: enemy.y,
+                        genome: enemy.agent.genome,
+                        splitData: enemy._splitOnDeath,
+                    });
+                }
 
                 // Remove from physics + lists
                 this.physics.removeBody(enemy.body);
@@ -216,6 +242,64 @@ export class Game {
                     this._advanceWave();
                 }
             }
+        }
+
+        // Process death effects
+        for (const effect of deathEffects) {
+            if (effect.type === 'explode') {
+                this._handleExplosion(effect);
+            } else if (effect.type === 'split') {
+                this._handleSplit(effect);
+            }
+        }
+    }
+
+    _handleExplosion(effect) {
+        // Damage player if within radius
+        const dx = this.player.x - effect.x;
+        const dy = this.player.y - effect.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < effect.radius) {
+            const falloff = 1 - dist / effect.radius;
+            this.player.hp -= effect.damage * falloff;
+            this.player.hp = Math.max(0, this.player.hp);
+        }
+
+        // Heavy screen shake
+        this.camera.shake(12, 300);
+    }
+
+    _handleSplit(effect) {
+        const { genome, splitData } = effect;
+
+        for (let i = 0; i < splitData.count; i++) {
+            const offsetX = (i === 0 ? -30 : 30);
+            const childGenome = genome.clone();
+
+            // Children have no body mutations
+            const child = new Enemy(effect.x + offsetX, effect.y, childGenome, []);
+            child.skeleton = new Skeleton();
+            child.initAnimation();
+
+            // Apply split stats
+            child.hp = CONFIG.ENEMY_BASE_HP * this._getStatMultiplier() * splitData.hpMult;
+            child.maxHp = child.hp;
+            child._baseDamageMult = splitData.damageMult;
+
+            // Scale down visually
+            if (child.skeleton) {
+                for (const bone of Object.values(child.skeleton.bones)) {
+                    if (bone.length > 0) {
+                        bone.length *= splitData.scale;
+                        bone.thickness *= splitData.scale;
+                    }
+                }
+            }
+
+            this.physics.addBody(child.body);
+            this.fighters.push(child);
+            this.enemies.push(child);
         }
     }
 
