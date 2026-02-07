@@ -103,6 +103,10 @@ export class Fighter {
             restitution: 0,
             inertia: Infinity,
             inverseInertia: 0,
+            collisionFilter: {
+                category: category,
+                mask: collidesWith,
+            },
         });
 
         this.body.fighter = this;
