@@ -100,4 +100,17 @@ export const CONFIG = {
     BONE_LINE_WIDTH: 3,
     HEAD_RADIUS: 8,
     JOINT_RADIUS: 2,
+
+    // Particles
+    PARTICLE_MAX_POOL: 300,
+    PARTICLE_HIT_SPARK_COUNT: 8,
+    PARTICLE_HIT_SPARK_LIFE: 300,
+    SHOW_DAMAGE_NUMBERS: true,
+
+    // Audio
+    MASTER_VOLUME: 1.0,
+    EFFECTS_VOLUME: 0.8,
+
+    // Pause
+    PAUSE_OVERLAY_ALPHA: 0.5,
 };

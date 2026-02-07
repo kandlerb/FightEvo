@@ -26,12 +26,23 @@ export class Renderer {
             fighter.draw(this.ctx, interpolation);
         }
 
+        // Draw particles in world space
+        if (stats && stats.particles) {
+            stats.particles.draw(this.ctx);
+        }
+
+        // Draw damage numbers in world space
+        if (stats && stats.damageNumbers) {
+            this._drawDamageNumbers(this.ctx, stats.damageNumbers);
+        }
+
         this.camera.resetTransform(this.ctx);
 
         this.drawHUD(fighters, stats);
 
-        // Overlays (boss intro, wave transition, game over)
+        // Screen effects and overlays
         if (stats) {
+            this._drawLowHPVignette(stats.playerHPRatio);
             this._drawOverlays(stats);
         }
     }
@@ -86,21 +97,18 @@ export class Renderer {
         if (stats && stats.boss && stats.waveState === 'BOSS_FIGHT') {
             this._drawBossHPBar(ctx, stats.boss);
         } else {
-            // Enemy HP bars (stack on right side) with mutation labels
             const enemies = fighters.filter(f => !f.isPlayer);
             for (let i = 0; i < enemies.length; i++) {
                 const barX = CONFIG.CANVAS_WIDTH - 220;
                 const barY = 20 + i * 28;
                 const enemy = enemies[i];
 
-                // Build label with mutation names
                 let label = `E${i + 1}`;
                 if (enemy.mutations && enemy.mutations.length > 0) {
                     const mutNames = enemy.mutations.map(m => m.name).join('+');
                     label += ` [${mutNames}]`;
                 }
 
-                // Use mutation tint for bar color if available
                 const barColor = (enemy.mutations && enemy.mutations.length > 0)
                     ? (enemy.color || '#a44')
                     : '#a44';
@@ -127,7 +135,6 @@ export class Renderer {
 
             ctx.textAlign = 'center';
 
-            // Wave tier name + wave number
             const tier = stats.waveTier || '';
             ctx.fillText(`WAVE ${stats.wave}  ${tier}`, midX, 16);
 
@@ -145,6 +152,53 @@ export class Renderer {
             }
             ctx.textAlign = 'left';
         }
+
+        // Controls hint (bottom center, subtle)
+        ctx.fillStyle = '#444';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('WASD move  J punch  K kick  L block  Space dash  ESC pause', CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT - 8);
+        ctx.textAlign = 'left';
+    }
+
+    /**
+     * Draw floating damage numbers in world space.
+     */
+    _drawDamageNumbers(ctx, numbers) {
+        for (const dn of numbers) {
+            const alpha = dn.life / dn.maxLife;
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 14px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(dn.text, dn.x, dn.y);
+            ctx.textAlign = 'left';
+        }
+        ctx.globalAlpha = 1;
+    }
+
+    /**
+     * Low HP vignette — red border darkening when player HP is low.
+     */
+    _drawLowHPVignette(hpRatio) {
+        if (hpRatio >= 0.3) return;
+
+        const ctx = this.ctx;
+        const intensity = (0.3 - hpRatio) / 0.3; // 0 at 30%, 1 at 0%
+        const alpha = intensity * 0.4;
+
+        // Red tint overlay at edges (vignette)
+        const gradient = ctx.createRadialGradient(
+            CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2,
+            CONFIG.CANVAS_WIDTH * 0.3,
+            CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2,
+            CONFIG.CANVAS_WIDTH * 0.7
+        );
+        gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        gradient.addColorStop(1, `rgba(100, 0, 0, ${alpha})`);
+
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
     }
 
     /**
@@ -161,7 +215,7 @@ export class Renderer {
         ctx.fillStyle = '#222';
         ctx.fillRect(barX, barY, barW, barH);
 
-        // Fill with gold gradient effect
+        // Fill
         const hpRatio = Math.max(0, boss.hp / boss.maxHp);
         if (hpRatio > 0) {
             ctx.fillStyle = hpRatio > 0.3 ? '#ffd700' : '#a44';
@@ -188,7 +242,7 @@ export class Renderer {
     }
 
     /**
-     * Draw overlays (boss intro, wave transition, game over).
+     * Draw overlays (boss intro, wave transition, pause, game over).
      */
     _drawOverlays(stats) {
         const ctx = this.ctx;
@@ -199,12 +253,10 @@ export class Renderer {
         if (stats.waveState === 'BOSS_INTRO') {
             const progress = stats.introProgress || 0;
 
-            // Darken screen (fade in)
             const alpha = Math.min(progress * 2, 0.7);
             ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
             ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
 
-            // "BOSS" text appears after screen darkens
             if (progress > 0.3) {
                 const textAlpha = Math.min((progress - 0.3) / 0.3, 1);
                 ctx.globalAlpha = textAlpha;
@@ -227,7 +279,6 @@ export class Renderer {
         if (stats.waveState === 'WAVE_TRANSITION') {
             const progress = stats.transitionProgress || 0;
 
-            // Brief flash/fade
             const alpha = progress < 0.5
                 ? progress * 0.4
                 : (1 - progress) * 0.4;
@@ -237,7 +288,6 @@ export class Renderer {
                 ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
             }
 
-            // "WAVE N" text
             if (progress < 0.7) {
                 const textAlpha = progress < 0.5 ? progress * 2 : (0.7 - progress) * 5;
                 ctx.globalAlpha = Math.max(0, textAlpha);
@@ -255,6 +305,27 @@ export class Renderer {
                 ctx.textAlign = 'left';
                 ctx.globalAlpha = 1;
             }
+        }
+
+        // Pause menu overlay
+        if (stats.isPaused) {
+            ctx.fillStyle = `rgba(0, 0, 0, ${CONFIG.PAUSE_OVERLAY_ALPHA})`;
+            ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
+
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 32px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('PAUSED', midX, midY - 30);
+
+            ctx.fillStyle = '#aaa';
+            ctx.font = '14px monospace';
+            ctx.fillText('Press ESC to resume', midX, midY + 10);
+
+            ctx.fillStyle = '#777';
+            ctx.font = '12px monospace';
+            ctx.fillText('WASD move | J punch | K kick | L block | Space dash', midX, midY + 40);
+
+            ctx.textAlign = 'left';
         }
 
         // Game over overlay
