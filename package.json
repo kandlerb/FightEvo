@@ -1,0 +1,19 @@
+{
+  "name": "fightevo",
+  "version": "1.0.0",
+  "description": "A 2D arena survival fighting game where enemies are controlled by neural networks that evolve via NEAT (NeuroEvolution of Augmenting Topologies). The longer you survive, the smarter and more mutated the enemies become.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:61336/git/kandlerb/FightEvo"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "playwright": "^1.58.2"
+  }
+}
