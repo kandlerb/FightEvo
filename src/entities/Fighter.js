@@ -3,6 +3,7 @@ import { CONFIG } from '../config.js';
 import { CATEGORY } from '../physics/PhysicsConfig.js';
 import { StateManager } from '../combat/StateManager.js';
 import { AnimationController } from '../skeleton/AnimationController.js';
+import { CombatController } from '../combat/CombatController.js';
 
 export class Fighter {
     constructor(x, y, opts = {}) {
@@ -21,16 +22,21 @@ export class Fighter {
         this.isWallSliding = false;
         this.isFastFalling = false;
         this.isFloating = false;
+        this.isBlocking = false;
+        this.blockType = null; // 'stand', 'crouch', or 'air'
 
         // Physics body dimensions
         this.bodyWidth = 30;
         this.bodyHeight = 70;
         this.footSensorHeight = 6;
 
-        // Skeleton & animation (assigned after creation via initSkeleton)
+        // Skeleton & animation (assigned after creation via initAnimation)
         this.skeleton = null;
         this.stateManager = null;
         this.animController = null;
+
+        // Combat (assigned after skeleton via initAnimation)
+        this.combat = null;
 
         // Movement controller (set by subclass)
         this.movement = null;
@@ -38,11 +44,12 @@ export class Fighter {
         this._createBody(x, y);
     }
 
-    /** Call after skeleton is assigned to wire up animation systems */
+    /** Call after skeleton is assigned to wire up animation and combat systems */
     initAnimation() {
         if (!this.skeleton) return;
         this.stateManager = new StateManager(this);
         this.animController = new AnimationController(this.skeleton);
+        this.combat = new CombatController(this);
     }
 
     _createBody(x, y) {
@@ -50,7 +57,6 @@ export class Fighter {
         const collidesWith = CATEGORY.GROUND | CATEGORY.WALL | CATEGORY.PLATFORM |
                              (this.isPlayer ? CATEGORY.ENEMY : CATEGORY.PLAYER);
 
-        // Main body
         const mainBody = Matter.Bodies.rectangle(
             x, y,
             this.bodyWidth, this.bodyHeight,
@@ -63,7 +69,6 @@ export class Fighter {
             }
         );
 
-        // Foot sensor at the bottom of the body
         const footSensor = Matter.Bodies.rectangle(
             x, y + this.bodyHeight / 2 + this.footSensorHeight / 2,
             this.bodyWidth - 4,
@@ -79,7 +84,6 @@ export class Fighter {
         );
         footSensor.fighter = this;
 
-        // Compound body
         this.body = Matter.Body.create({
             parts: [mainBody, footSensor],
             friction: CONFIG.GROUND_FRICTION,
@@ -89,7 +93,6 @@ export class Fighter {
             inverseInertia: 0,
         });
 
-        // Store reference back to fighter
         this.body.fighter = this;
         mainBody.fighter = this;
     }
@@ -128,6 +131,11 @@ export class Fighter {
 
         // Update facing direction
         this.facingDirection = this.isPlayer ? this._playerFacing() : this.facingDirection;
+
+        // Update combat
+        if (this.combat) {
+            this.combat.update();
+        }
 
         // Update state machine and animation
         if (this.stateManager) {

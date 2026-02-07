@@ -1,6 +1,6 @@
 /**
  * Fighter state FSM. Determines the current state based on fighter flags,
- * and maps states to animation names.
+ * and maps states to animation names. Handles both movement and combat states.
  */
 
 export const FighterState = {
@@ -15,6 +15,9 @@ export const FighterState = {
     SLIDING: 'SLIDING',
     WALL_SLIDING: 'WALL_SLIDING',
     DASHING: 'DASHING',
+    ATTACKING: 'ATTACKING',
+    BLOCKING: 'BLOCKING',
+    HITSTUN: 'HITSTUN',
 };
 
 const STATE_TO_ANIM = {
@@ -29,6 +32,8 @@ const STATE_TO_ANIM = {
     [FighterState.SLIDING]: 'slide',
     [FighterState.WALL_SLIDING]: 'wall_slide',
     [FighterState.DASHING]: 'dash_forward',
+    [FighterState.BLOCKING]: 'block_stand',
+    [FighterState.HITSTUN]: 'hit_stagger',
 };
 
 export class StateManager {
@@ -49,11 +54,37 @@ export class StateManager {
     }
 
     get animationName() {
+        // Attacking state uses the move's animation name directly
+        if (this.state === FighterState.ATTACKING) {
+            const combat = this.fighter.combat;
+            if (combat && combat.comboSystem.currentMove) {
+                return combat.comboSystem.currentMove.animation;
+            }
+        }
+        // Blocking: choose stand or crouch block based on fighter state
+        if (this.state === FighterState.BLOCKING) {
+            return this.fighter.isCrouching ? 'block_crouch' : 'block_stand';
+        }
         return STATE_TO_ANIM[this.state] || 'idle';
     }
 
     _determineState() {
         const f = this.fighter;
+
+        // Hitstun takes top priority
+        if (f.combat && f.combat.hitstunFrames > 0) {
+            return FighterState.HITSTUN;
+        }
+
+        // Attacking
+        if (f.combat && f.combat.comboSystem.currentMove) {
+            return FighterState.ATTACKING;
+        }
+
+        // Blocking
+        if (f.isBlocking) {
+            return FighterState.BLOCKING;
+        }
 
         // Landing takes priority for a few frames
         if (this.landingFrames > 0) {
@@ -90,7 +121,6 @@ export class StateManager {
 
         // Ground states
         if (f.isCrouching) {
-            // Sliding: crouching while moving
             if (f.body && Math.abs(f.body.velocity.x) > 2) {
                 return FighterState.SLIDING;
             }
@@ -98,7 +128,6 @@ export class StateManager {
         }
 
         if (f.body && Math.abs(f.body.velocity.x) > 0.5) {
-            // Determine forward vs backward walking
             const movingInFacingDir = (f.body.velocity.x > 0 && f.facingDirection === 1) ||
                                       (f.body.velocity.x < 0 && f.facingDirection === -1);
             return movingInFacingDir ? FighterState.WALKING_FORWARD : FighterState.WALKING_BACKWARD;

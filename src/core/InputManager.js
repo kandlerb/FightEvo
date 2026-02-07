@@ -73,4 +73,13 @@ export class InputManager {
     wasReleased(key) {
         return !!this.keysReleased[key];
     }
+
+    /** Get combo direction relative to facing (for combo system) */
+    getComboDirection() {
+        if (this.moveDirection === this.facingDirection) return 'forward';
+        if (this.moveDirection === -this.facingDirection) return 'back';
+        if (this.isDown('w')) return 'up';
+        if (this.isDown('s')) return 'down';
+        return 'neutral';
+    }
 }

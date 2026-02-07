@@ -74,23 +74,46 @@ export class Renderer {
         const player = fighters.find(f => f.isPlayer);
         if (!player) return;
 
-        // HP bar background
+        // Player HP bar
+        this._drawHPBar(ctx, 20, 20, 200, 16, player, '#4a4', 'Player');
+
+        // Enemy HP bars
+        const enemies = fighters.filter(f => !f.isPlayer);
+        for (let i = 0; i < enemies.length; i++) {
+            const barX = CONFIG.CANVAS_WIDTH - 220;
+            const barY = 20 + i * 24;
+            this._drawHPBar(ctx, barX, barY, 200, 16, enemies[i], '#a44', 'Enemy');
+        }
+
+        // Combo counter
+        if (player.combat && player.combat.comboSystem.comboCount > 1) {
+            ctx.fillStyle = '#ff0';
+            ctx.font = 'bold 18px monospace';
+            ctx.fillText(
+                `${player.combat.comboSystem.comboCount} HIT`,
+                20, 60
+            );
+        }
+    }
+
+    _drawHPBar(ctx, x, y, w, h, fighter, color, label) {
+        // Background
         ctx.fillStyle = '#333';
-        ctx.fillRect(20, 20, 200, 16);
+        ctx.fillRect(x, y, w, h);
 
-        // HP bar fill
-        const hpRatio = Math.max(0, player.hp / player.maxHp);
-        ctx.fillStyle = hpRatio > 0.3 ? '#4a4' : '#a44';
-        ctx.fillRect(20, 20, 200 * hpRatio, 16);
+        // Fill
+        const hpRatio = Math.max(0, fighter.hp / fighter.maxHp);
+        ctx.fillStyle = hpRatio > 0.3 ? color : '#a44';
+        ctx.fillRect(x, y, w * hpRatio, h);
 
-        // HP bar border
+        // Border
         ctx.strokeStyle = '#888';
         ctx.lineWidth = 1;
-        ctx.strokeRect(20, 20, 200, 16);
+        ctx.strokeRect(x, y, w, h);
 
-        // HP text
+        // Text
         ctx.fillStyle = '#fff';
         ctx.font = '12px monospace';
-        ctx.fillText(`HP: ${Math.ceil(player.hp)}`, 24, 33);
+        ctx.fillText(`${label}: ${Math.ceil(fighter.hp)}`, x + 4, y + 13);
     }
 }
