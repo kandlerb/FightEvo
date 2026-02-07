@@ -23,6 +23,10 @@ export class Bone {
         // Mode: 'animated' or 'ragdoll'
         this.mode = 'animated';
         this.angularVelocity = 0;
+
+        // Structural state (set by StructuralSystem)
+        this.structuralHP = 1.0; // 0-1 ratio for rendering
+        this.isBroken = false;
     }
 
     addChild(bone) {
@@ -31,7 +35,29 @@ export class Bone {
         return bone;
     }
 
+    /**
+     * Update ragdoll physics: pendulum simulation hanging from parent.
+     */
+    updateRagdoll(dt) {
+        if (this.mode !== 'ragdoll') return;
+
+        const GRAVITY = 1.5;
+        const gravityTorque = Math.sin(this.localRotation) * GRAVITY * this.length * 0.01;
+        this.angularVelocity += gravityTorque * (dt / 16.67);
+        this.angularVelocity *= 0.95; // damping
+        this.localRotation += this.angularVelocity * (dt / 16.67);
+
+        // Clamp to prevent wild spinning
+        const maxAngle = Math.PI * 0.8;
+        this.localRotation = Math.max(-maxAngle, Math.min(maxAngle, this.localRotation));
+    }
+
     computeWorldTransform(parentWorldX, parentWorldY, parentWorldRotation) {
+        // Update ragdoll physics before computing transform
+        if (this.mode === 'ragdoll') {
+            this.updateRagdoll(16.67);
+        }
+
         this.worldStart.x = parentWorldX;
         this.worldStart.y = parentWorldY;
         this.worldRotation = parentWorldRotation + this.localRotation;

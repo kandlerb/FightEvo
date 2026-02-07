@@ -4,6 +4,8 @@ import { CATEGORY } from '../physics/PhysicsConfig.js';
 import { StateManager } from '../combat/StateManager.js';
 import { AnimationController } from '../skeleton/AnimationController.js';
 import { CombatController } from '../combat/CombatController.js';
+import { StructuralSystem } from '../structural/StructuralSystem.js';
+import { LimbDamageHandler } from '../structural/LimbDamageHandler.js';
 
 export class Fighter {
     constructor(x, y, opts = {}) {
@@ -38,18 +40,28 @@ export class Fighter {
         // Combat (assigned after skeleton via initAnimation)
         this.combat = null;
 
+        // Structural integrity (assigned after skeleton via initAnimation)
+        this.structural = null;
+        this.limbDamage = null;
+
+        // Movement multipliers (set by LimbDamageHandler)
+        this.speedMult = 1.0;
+        this.jumpMult = 1.0;
+
         // Movement controller (set by subclass)
         this.movement = null;
 
         this._createBody(x, y);
     }
 
-    /** Call after skeleton is assigned to wire up animation and combat systems */
+    /** Call after skeleton is assigned to wire up animation, combat, and structural systems */
     initAnimation() {
         if (!this.skeleton) return;
         this.stateManager = new StateManager(this);
         this.animController = new AnimationController(this.skeleton);
         this.combat = new CombatController(this);
+        this.structural = new StructuralSystem(this);
+        this.limbDamage = new LimbDamageHandler(this);
     }
 
     _createBody(x, y) {
@@ -146,15 +158,36 @@ export class Fighter {
             this.animController.update();
         }
 
+        // Update limb damage (spine HP drain, etc.)
+        if (this.limbDamage) {
+            this.limbDamage.update(dt);
+        }
+
         // Update skeleton position if attached
         if (this.skeleton) {
             this.skeleton.setPosition(this.x, this.y + this.bodyHeight / 4);
             this.skeleton.setFacing(this.facingDirection);
+
+            // Sync structural state to bones for rendering
+            if (this.structural) {
+                this._syncStructuralToBones();
+            }
         }
     }
 
     _playerFacing() {
         return this.facingDirection;
+    }
+
+    /**
+     * Sync structural HP ratios and broken state from StructuralSystem to
+     * Bone objects so the Skeleton renderer can visualize damage.
+     */
+    _syncStructuralToBones() {
+        for (const [boneName, bone] of Object.entries(this.skeleton.bones)) {
+            bone.structuralHP = this.structural.getBoneHPRatio(boneName);
+            bone.isBroken = this.structural.brokenBones.has(boneName);
+        }
     }
 
     draw(ctx, interpolation) {

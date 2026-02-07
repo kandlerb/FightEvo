@@ -105,9 +105,10 @@ export class Game {
                 for (const hit of hits) {
                     const zone = hit.hurtbox.zone;
                     const move = hit.hitbox.move;
+                    const boneName = hit.hurtbox.bone;
                     const comboScale = attacker.combat.getDamageScale();
 
-                    DamagePipeline.resolve(attacker, defender, move, zone, comboScale);
+                    DamagePipeline.resolve(attacker, defender, move, zone, comboScale, boneName);
                     attacker.combat.confirmHit();
 
                     // Screen shake on hit

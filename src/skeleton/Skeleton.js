@@ -135,25 +135,56 @@ export class Skeleton {
     _drawBone(ctx, bone, color) {
         // Don't draw the root hip (zero-length anchor point)
         if (bone.length > 0) {
+            const boneColor = this._getDamageColor(bone, color);
+            const isBroken = bone.isBroken;
+
             if (bone.isHead) {
                 // Draw head as a circle at the endpoint
-                ctx.fillStyle = color;
-                ctx.beginPath();
-                ctx.arc(bone.worldEnd.x, bone.worldEnd.y, 8, 0, Math.PI * 2);
-                ctx.fill();
+                ctx.fillStyle = boneColor;
+                if (isBroken) {
+                    ctx.setLineDash([3, 3]);
+                    ctx.strokeStyle = boneColor;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(bone.worldEnd.x, bone.worldEnd.y, 8, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(bone.worldEnd.x, bone.worldEnd.y, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                }
             } else {
-                ctx.strokeStyle = color;
+                if (isBroken) {
+                    ctx.setLineDash([4, 4]);
+                }
+                ctx.strokeStyle = boneColor;
                 ctx.lineWidth = bone.thickness;
                 ctx.lineCap = 'round';
                 ctx.beginPath();
                 ctx.moveTo(bone.worldStart.x, bone.worldStart.y);
                 ctx.lineTo(bone.worldEnd.x, bone.worldEnd.y);
                 ctx.stroke();
+                if (isBroken) {
+                    ctx.setLineDash([]);
+                }
+            }
+
+            // Draw damage crack indicators for critically damaged bones
+            if (!isBroken && bone.structuralHP < 0.4 && bone.structuralHP > 0) {
+                const mx = (bone.worldStart.x + bone.worldEnd.x) / 2;
+                const my = (bone.worldStart.y + bone.worldEnd.y) / 2;
+                ctx.strokeStyle = '#f00';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(mx - 3, my - 3);
+                ctx.lineTo(mx + 3, my + 3);
+                ctx.stroke();
             }
 
             // Draw endpoints (hands/feet) as small circles
             if (bone.isEndpoint) {
-                ctx.fillStyle = color;
+                ctx.fillStyle = boneColor;
                 ctx.beginPath();
                 ctx.arc(bone.worldEnd.x, bone.worldEnd.y, 2, 0, Math.PI * 2);
                 ctx.fill();
@@ -164,5 +195,44 @@ export class Skeleton {
         for (const child of bone.children) {
             this._drawBone(ctx, child, color);
         }
+    }
+
+    /**
+     * Get the display color for a bone based on structural damage.
+     * Interpolates from base color toward dark red/grey as HP drops.
+     */
+    _getDamageColor(bone, baseColor) {
+        const hp = bone.structuralHP;
+        if (hp >= 0.8) return baseColor;
+
+        // Parse the base color
+        const rgb = this._parseColor(baseColor);
+        if (!rgb) return baseColor;
+
+        if (bone.isBroken) {
+            // Broken: dark grey
+            return '#555';
+        }
+
+        // Lerp toward dark red based on damage
+        const t = 1 - (hp / 0.8); // 0 at 80% HP, 1 at 0% HP
+        const r = Math.round(rgb.r + (100 - rgb.r) * t);
+        const g = Math.round(rgb.g * (1 - t * 0.8));
+        const b = Math.round(rgb.b * (1 - t * 0.8));
+
+        return `rgb(${r},${g},${b})`;
+    }
+
+    _parseColor(color) {
+        if (color.startsWith('#')) {
+            let hex = color.slice(1);
+            if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+            return {
+                r: parseInt(hex.slice(0, 2), 16),
+                g: parseInt(hex.slice(2, 4), 16),
+                b: parseInt(hex.slice(4, 6), 16),
+            };
+        }
+        return null;
     }
 }

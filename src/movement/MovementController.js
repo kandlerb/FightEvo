@@ -66,7 +66,7 @@ export class MovementController {
         const dir = this.input.moveDirection;
         if (dir === 0) return;
 
-        let speed = CONFIG.MOVE_SPEED;
+        let speed = CONFIG.MOVE_SPEED * (f.speedMult || 1.0);
 
         if (!f.isGrounded) {
             speed *= CONFIG.AIR_CONTROL;
@@ -83,26 +83,33 @@ export class MovementController {
         const canJump = this.coyoteFrames > 0 && !f.isCrouching;
         const wantsJump = this.jumpBufferFrames > 0;
 
+        const jumpMult = f.jumpMult || 1.0;
+        if (jumpMult <= 0) {
+            // Can't jump at all (both legs destroyed)
+            this.jumpBufferFrames = 0;
+            return;
+        }
+
         if (canJump && wantsJump) {
             this.jumpBufferFrames = 0;
             this.coyoteFrames = 0;
 
             Matter.Body.setVelocity(f.body, {
                 x: vel.x,
-                y: CONFIG.JUMP_FORCE,
+                y: CONFIG.JUMP_FORCE * jumpMult,
             });
             return;
         }
 
         // Wall jump
-        if (wantsJump && f.isTouchingWall && !f.isGrounded &&
+        if (wantsJump && jumpMult > 0 && f.isTouchingWall && !f.isGrounded &&
             this.wallJumpChain < CONFIG.WALL_JUMP_MAX_CHAIN) {
 
             this.jumpBufferFrames = 0;
             this.wallJumpChain++;
 
             const decay = Math.pow(CONFIG.WALL_JUMP_CHAIN_DECAY, this.wallJumpChain - 1);
-            const force = CONFIG.WALL_JUMP_FORCE * decay;
+            const force = CONFIG.WALL_JUMP_FORCE * decay * jumpMult;
             const awayFromWall = -f.wallDirection;
 
             Matter.Body.setVelocity(f.body, {
