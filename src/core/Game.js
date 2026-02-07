@@ -7,9 +7,12 @@ import { Arena } from '../arena/Arena.js';
 import { Renderer } from '../rendering/Renderer.js';
 import { Player } from '../entities/Player.js';
 import { Enemy } from '../entities/Enemy.js';
+import { Boss } from '../entities/Boss.js';
 import { Skeleton } from '../skeleton/Skeleton.js';
 import { DamagePipeline } from '../combat/DamagePipeline.js';
 import { EvolutionManager } from '../ai/EvolutionManager.js';
+import { WaveManager, WaveState } from '../waves/WaveManager.js';
+import { MutationCatalog } from '../mutations/MutationCatalog.js';
 
 const State = {
     PLAYING: 'PLAYING',
@@ -34,12 +37,8 @@ export class Game {
         // Evolution
         this.evolution = new EvolutionManager();
 
-        // Wave tracking
-        this.wave = 1;
-        this.killsThisWave = 0;
-        this.killsToAdvance = CONFIG.KILLS_TO_ADVANCE_BASE;
-        this.totalKills = 0;
-        this.respawnTimer = 0;
+        // Wave management
+        this.waves = new WaveManager();
 
         // Fighters
         this.fighters = [];
@@ -68,7 +67,7 @@ export class Game {
 
     _spawnEnemy() {
         // Don't exceed max enemies for current wave
-        const maxEnemies = this._getMaxEnemies();
+        const maxEnemies = this.waves.getMaxEnemies();
         if (this.enemies.length >= maxEnemies) return;
 
         // Spawn position: random side of arena
@@ -76,7 +75,7 @@ export class Game {
         const spawnX = CONFIG.ARENA_WIDTH / 2 + side * (CONFIG.ARENA_WIDTH / 2 - 80);
         const spawnY = CONFIG.GROUND_Y - 80;
 
-        const { genome, mutations } = this.evolution.requestSpawn(this.wave);
+        const { genome, mutations } = this.evolution.requestSpawn(this.waves.wave);
         const enemy = new Enemy(spawnX, spawnY, genome, mutations);
         enemy.skeleton = new Skeleton();
         enemy.initAnimation();
@@ -85,7 +84,7 @@ export class Game {
         enemy.applyMutations();
 
         // Apply wave stat scaling (on top of mutation stats)
-        const statMult = this._getStatMultiplier();
+        const statMult = this.waves.getStatMultiplier();
         enemy.hp *= statMult;
         enemy.maxHp = enemy.hp;
 
@@ -94,24 +93,89 @@ export class Game {
         this.enemies.push(enemy);
     }
 
-    _getMaxEnemies() {
-        if (this.wave <= 2) return 2;
-        if (this.wave <= 5) return 3;
-        if (this.wave <= 9) return 4;
-        if (this.wave <= 14) return 5;
-        return 5 + Math.floor((this.wave - 14) / 3);
+    _spawnBoss() {
+        // Spawn at center-right of arena
+        const spawnX = CONFIG.ARENA_WIDTH / 2 + 100;
+        const spawnY = CONFIG.GROUND_Y - 80;
+
+        // Dominant genome from evolution
+        const genome = this.evolution.getDominantGenome();
+
+        // Boss gets biased mutations (higher tier more likely)
+        const mutCount = CONFIG.BOSS_MUTATION_COUNT;
+        const mutations = MutationCatalog.rollBossMutations(mutCount, this.waves.wave);
+
+        const boss = new Boss(spawnX, spawnY, genome, mutations, this.evolution.generation);
+        boss.skeleton = new Skeleton();
+        boss.initAnimation();
+
+        // Apply mutations
+        boss.applyMutations();
+
+        // Apply boss HP multiplier on top of wave scaling + mutations
+        const statMult = this.waves.getStatMultiplier();
+        boss.hp *= statMult * CONFIG.BOSS_HP_MULT;
+        boss.maxHp = boss.hp;
+
+        this.physics.addBody(boss.body);
+        this.fighters.push(boss);
+        this.enemies.push(boss);
+
+        return boss;
     }
 
-    _getStatMultiplier() {
-        return 1 + (this.wave - 1) * CONFIG.HP_SCALE_PER_WAVE;
+    /**
+     * Clear all regular enemies (called before boss intro).
+     */
+    _clearEnemies() {
+        for (let i = this.enemies.length - 1; i >= 0; i--) {
+            const enemy = this.enemies[i];
+            this.physics.removeBody(enemy.body);
+            const fi = this.fighters.indexOf(enemy);
+            if (fi !== -1) this.fighters.splice(fi, 1);
+            this.enemies.splice(i, 1);
+        }
     }
 
-    _getRespawnDelay() {
-        if (this.wave <= 2) return 180; // 3s
-        if (this.wave <= 5) return 120; // 2s
-        if (this.wave <= 9) return 90;  // 1.5s
-        if (this.wave <= 14) return 60; // 1s
-        return 30; // 0.5s
+    /**
+     * Heal player and reset structural damage before boss fight.
+     */
+    _preparePlayerForBoss() {
+        // Reset structural HP
+        if (CONFIG.PLAYER_STRUCTURAL_HEAL_ON_BOSS && this.player.structural) {
+            this.player.structural.reset();
+            // Sync reset bones
+            if (this.player.skeleton) {
+                for (const bone of Object.values(this.player.skeleton.bones)) {
+                    bone.structuralHP = 1.0;
+                    bone.isBroken = false;
+                    if (bone.mode === 'ragdoll') {
+                        bone.mode = 'animated';
+                        bone.angularVelocity = 0;
+                    }
+                }
+            }
+            // Reset movement penalties
+            this.player.speedMult = 1.0;
+            this.player.jumpMult = 1.0;
+        }
+    }
+
+    /**
+     * Reward player for defeating boss.
+     */
+    _onBossDefeated() {
+        // Heal player
+        this.player.hp = Math.min(
+            this.player.maxHp,
+            this.player.hp + CONFIG.BOSS_DEFEAT_HEAL
+        );
+
+        // Heavy camera shake for celebration
+        this.camera.shake(15, 400);
+
+        // Resume wave flow
+        this.waves.bossDefeated();
     }
 
     update(dt) {
@@ -123,6 +187,29 @@ export class Game {
         // Pause toggle
         if (this.input.wasPressed('escape')) {
             this.state = State.PAUSED;
+            return;
+        }
+
+        // Wave state machine
+        const waveEvent = this.waves.update();
+
+        if (waveEvent === 'intro_done') {
+            // Boss intro finished → spawn boss
+            const boss = this._spawnBoss();
+            this.waves.beginBossFight(boss);
+        }
+
+        if (waveEvent === 'transition_done') {
+            // Wave transition finished → resume normal spawning
+            // Enemies will be spawned by the respawn timer below
+        }
+
+        // Skip physics/combat during non-active states
+        if (this.waves.state === WaveState.BOSS_INTRO) {
+            // During intro: still render, but no gameplay
+            this.camera.follow(this.player.x, this.player.y);
+            this.camera.update(dt);
+            this.input.postUpdate();
             return;
         }
 
@@ -143,13 +230,9 @@ export class Game {
         // Handle enemy death
         this._handleDeaths();
 
-        // Respawn timer
-        if (this.enemies.length < this._getMaxEnemies()) {
-            this.respawnTimer++;
-            if (this.respawnTimer >= this._getRespawnDelay()) {
-                this.respawnTimer = 0;
-                this._spawnEnemy();
-            }
+        // Respawn timer (only during WAVE_ACTIVE)
+        if (this.waves.shouldRespawn(this.enemies.length)) {
+            this._spawnEnemy();
         }
 
         // Camera follows player
@@ -199,10 +282,16 @@ export class Game {
 
     _handleDeaths() {
         const deathEffects = []; // deferred effects (explosions, splits)
+        let bossKilled = false;
 
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             const enemy = this.enemies[i];
             if (enemy.hp <= 0) {
+                // Check if this was the boss
+                if (enemy.isBoss) {
+                    bossKilled = true;
+                }
+
                 // Report fitness to evolution system
                 const fitness = enemy.getFinalFitness();
                 this.evolution.reportDeath(enemy.agent.genome, fitness);
@@ -234,12 +323,12 @@ export class Game {
                 if (fi !== -1) this.fighters.splice(fi, 1);
                 this.enemies.splice(i, 1);
 
-                // Track kills and wave progression
-                this.totalKills++;
-                this.killsThisWave++;
-
-                if (this.killsThisWave >= this.killsToAdvance) {
-                    this._advanceWave();
+                // Track kills and wave progression (skip boss — handled separately)
+                if (!enemy.isBoss) {
+                    const action = this.waves.registerKill();
+                    if (action === 'advance') {
+                        this._handleWaveAdvance();
+                    }
                 }
             }
         }
@@ -252,6 +341,26 @@ export class Game {
                 this._handleSplit(effect);
             }
         }
+
+        // Boss defeated
+        if (bossKilled) {
+            this._onBossDefeated();
+        }
+    }
+
+    /**
+     * Handle wave advancement. Clear enemies if boss incoming.
+     */
+    _handleWaveAdvance() {
+        const result = this.waves.beginAdvance();
+
+        if (result === 'boss_intro') {
+            // Clear all regular enemies for boss entrance
+            this._clearEnemies();
+            // Prepare player for boss fight
+            this._preparePlayerForBoss();
+        }
+        // For 'transition', enemies just stop spawning briefly
     }
 
     _handleExplosion(effect) {
@@ -283,7 +392,7 @@ export class Game {
             child.initAnimation();
 
             // Apply split stats
-            child.hp = CONFIG.ENEMY_BASE_HP * this._getStatMultiplier() * splitData.hpMult;
+            child.hp = CONFIG.ENEMY_BASE_HP * this.waves.getStatMultiplier() * splitData.hpMult;
             child.maxHp = child.hp;
             child._baseDamageMult = splitData.damageMult;
 
@@ -303,23 +412,13 @@ export class Game {
         }
     }
 
-    _advanceWave() {
-        this.wave++;
-        this.killsThisWave = 0;
-        this.killsToAdvance = CONFIG.KILLS_TO_ADVANCE_BASE + (this.wave - 1) * CONFIG.KILLS_SCALE_PER_WAVE;
-        this.respawnTimer = 0;
-    }
-
     render(interpolation) {
-        this.renderer.draw(this.arena, this.fighters, interpolation, {
-            wave: this.wave,
-            generation: this.evolution.generation,
-            totalKills: this.totalKills,
-            killsThisWave: this.killsThisWave,
-            killsToAdvance: this.killsToAdvance,
-            enemyCount: this.enemies.length,
-            gameState: this.state,
-        });
+        const stats = this.waves.getStats(
+            this.evolution.generation,
+            this.enemies.length,
+            this.state
+        );
+        this.renderer.draw(this.arena, this.fighters, interpolation, stats);
     }
 
     destroy() {

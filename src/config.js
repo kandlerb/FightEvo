@@ -68,6 +68,11 @@ export const CONFIG = {
     SPEED_SCALE_PER_WAVE: 0.02,
     BOSS_EVERY_N_WAVES: 5,
     BOSS_HP_MULT: 3.0,
+    BOSS_MUTATION_COUNT: 2,
+    BOSS_BONE_THICKNESS: 2.0,
+    BOSS_INTRO_FRAMES: 120,        // 2s dramatic pause before boss
+    BOSS_DEFEAT_HEAL: 30,          // HP restored on boss kill
+    WAVE_TRANSITION_FRAMES: 90,    // 1.5s pause between waves
 
     // Rendering
     CANVAS_WIDTH: 960,
