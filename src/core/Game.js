@@ -42,8 +42,9 @@ export class Game {
 
         this.player = new Player(spawnX, spawnY, this.input);
 
-        // Attach skeleton
+        // Attach skeleton and init animation
         this.player.skeleton = new Skeleton();
+        this.player.initAnimation();
 
         this.physics.addBody(this.player.body);
         this.fighters.push(this.player);

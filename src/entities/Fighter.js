@@ -1,6 +1,8 @@
 import Matter from 'matter-js';
 import { CONFIG } from '../config.js';
 import { CATEGORY } from '../physics/PhysicsConfig.js';
+import { StateManager } from '../combat/StateManager.js';
+import { AnimationController } from '../skeleton/AnimationController.js';
 
 export class Fighter {
     constructor(x, y, opts = {}) {
@@ -25,10 +27,22 @@ export class Fighter {
         this.bodyHeight = 70;
         this.footSensorHeight = 6;
 
-        // Skeleton (assigned after creation)
+        // Skeleton & animation (assigned after creation via initSkeleton)
         this.skeleton = null;
+        this.stateManager = null;
+        this.animController = null;
+
+        // Movement controller (set by subclass)
+        this.movement = null;
 
         this._createBody(x, y);
+    }
+
+    /** Call after skeleton is assigned to wire up animation systems */
+    initAnimation() {
+        if (!this.skeleton) return;
+        this.stateManager = new StateManager(this);
+        this.animController = new AnimationController(this.skeleton);
     }
 
     _createBody(x, y) {
@@ -115,6 +129,15 @@ export class Fighter {
         // Update facing direction
         this.facingDirection = this.isPlayer ? this._playerFacing() : this.facingDirection;
 
+        // Update state machine and animation
+        if (this.stateManager) {
+            this.stateManager.update(dt);
+            if (this.stateManager.stateChanged) {
+                this.animController.play(this.stateManager.animationName);
+            }
+            this.animController.update();
+        }
+
         // Update skeleton position if attached
         if (this.skeleton) {
             this.skeleton.setPosition(this.x, this.y + this.bodyHeight / 4);
@@ -123,7 +146,6 @@ export class Fighter {
     }
 
     _playerFacing() {
-        // This is overridden by the input manager's facing direction in Player
         return this.facingDirection;
     }
 
@@ -131,7 +153,6 @@ export class Fighter {
         if (this.skeleton) {
             this.skeleton.draw(ctx, this.color);
         } else {
-            // Fallback: draw as a rectangle
             ctx.fillStyle = this.color;
             ctx.fillRect(
                 this.x - this.bodyWidth / 2,
