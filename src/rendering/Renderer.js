@@ -15,7 +15,7 @@ export class Renderer {
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
-    draw(arena, fighters, interpolation) {
+    draw(arena, fighters, interpolation, stats) {
         this.clear();
 
         this.camera.applyTransform(this.ctx);
@@ -28,7 +28,7 @@ export class Renderer {
 
         this.camera.resetTransform(this.ctx);
 
-        this.drawHUD(fighters);
+        this.drawHUD(fighters, stats);
     }
 
     drawArena(arena) {
@@ -69,7 +69,7 @@ export class Renderer {
         ctx.stroke();
     }
 
-    drawHUD(fighters) {
+    drawHUD(fighters, stats) {
         const ctx = this.ctx;
         const player = fighters.find(f => f.isPlayer);
         if (!player) return;
@@ -77,12 +77,12 @@ export class Renderer {
         // Player HP bar
         this._drawHPBar(ctx, 20, 20, 200, 16, player, '#4a4', 'Player');
 
-        // Enemy HP bars
+        // Enemy HP bars (stack on right side)
         const enemies = fighters.filter(f => !f.isPlayer);
         for (let i = 0; i < enemies.length; i++) {
             const barX = CONFIG.CANVAS_WIDTH - 220;
-            const barY = 20 + i * 24;
-            this._drawHPBar(ctx, barX, barY, 200, 16, enemies[i], '#a44', 'Enemy');
+            const barY = 20 + i * 22;
+            this._drawHPBar(ctx, barX, barY, 200, 14, enemies[i], '#a44', `Enemy ${i + 1}`);
         }
 
         // Combo counter
@@ -93,6 +93,42 @@ export class Renderer {
                 `${player.combat.comboSystem.comboCount} HIT`,
                 20, 60
             );
+        }
+
+        // Wave / Evolution info
+        if (stats) {
+            ctx.fillStyle = '#aaa';
+            ctx.font = '12px monospace';
+            const midX = CONFIG.CANVAS_WIDTH / 2;
+
+            ctx.textAlign = 'center';
+            ctx.fillText(`WAVE ${stats.wave}`, midX, 16);
+
+            ctx.fillStyle = '#777';
+            ctx.fillText(
+                `Kills: ${stats.killsThisWave}/${stats.killsToAdvance}  |  Gen ${stats.generation}  |  Total: ${stats.totalKills}`,
+                midX, 32
+            );
+            ctx.textAlign = 'left';
+
+            // Game over overlay
+            if (stats.gameState === 'GAME_OVER') {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
+
+                ctx.fillStyle = '#f44';
+                ctx.font = 'bold 36px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('GAME OVER', midX, CONFIG.CANVAS_HEIGHT / 2 - 20);
+
+                ctx.fillStyle = '#fff';
+                ctx.font = '16px monospace';
+                ctx.fillText(
+                    `Wave ${stats.wave}  |  ${stats.totalKills} Kills  |  Gen ${stats.generation}`,
+                    midX, CONFIG.CANVAS_HEIGHT / 2 + 20
+                );
+                ctx.textAlign = 'left';
+            }
         }
     }
 
